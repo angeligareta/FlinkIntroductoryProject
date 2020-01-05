@@ -9,27 +9,21 @@ import org.apache.flink.api.java.tuple.Tuple5;
 import java.text.SimpleDateFormat;
 import java.util.Locale;
 
-// Dataset row examples
-// 1, 2019-06-01 00:29:12, 2019-06-01 01:03:13, 1, 8.60, 1, N, 186, 243, 1, 31.5, 3, 0.5, 7.05, 0, 0.3, 42.35, 2.5
-// 2, 2019-06-01 00:01:48, 2019-06-01 00:16:06, 1, 1.74, 1, N, 107, 148, 1, 11, 0.5, 0.5, 2.96, 0, 0.3, 17.76, 2.5
-
-// Dataset headers
-// VendorID, tpep_pickup_datetime, tpep_dropoff_datetime, passenger_count, trip_distance, RatecodeID,
-//store_and_fwd_flag, PULocationID, DOLocationID, payment_type, fare_amount, extra, mta_tax,
-//tip_amount, tolls_amount, improvement_surcharge, total_amount, congestion_surcharge
-
-// Datatset types
-// Int, Date, Date, Int, Float, Int, String, Int, Int, Int, Float, Float, Float, Float, Int, Float, Float, Float
-
+/**
+ * Utils to handle with Yellow Taxi Trip Dataset.
+ */
 public class DatasetReader {
+    /**
+     * Simple date formatter for dataset date types.
+     */
     public static final SimpleDateFormat dateFormatter = new SimpleDateFormat("yyyy-mm-dd HH:mm:ss", Locale.ENGLISH);
 
     /**
-     * Main method to read the full data from the yellowtrip
+     * Main method to read the full data from the Yellow Taxi Trip Dataset.
      *
-     * @param env
-     * @param filePath
-     * @return
+     * @param env      flink environment
+     * @param filePath File where the dataset is
+     * @return Tuple with 18 values of the dataset
      */
     public static DataSet<Tuple18<Integer, String, String, Integer, Float, Integer, String, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float>>
     readFullDataset(final ExecutionEnvironment env, final String filePath) {
@@ -39,10 +33,24 @@ public class DatasetReader {
                         Float.class, Float.class, Float.class);
     }
 
+    /**
+     * Returns the necessary data for the jfk alarms exercise.
+     *
+     * @param env      flink environment
+     * @param filePath File where the dataset is
+     * @return Tuple with shape 0 => VendorID, 1 => tpep_pickup_datetime, 2 => tpep_dropoff_datetime, 3 => passenger_count, 4 => RatecodeID
+     */
     public static DataSet<Tuple5<Integer, String, String, Integer, Integer>> getJFKAlarmsParameters(final ExecutionEnvironment env, final String filePath) {
         return readFullDataset(env, filePath).project(0, 1, 2, 3, 5);
     }
 
+    /**
+     * Returns the necessary data for the large trips exercise.
+     *
+     * @param env      flink environment
+     * @param filePath File where the dataset is
+     * @return Tuple with shape TODO
+     */
     public static DataSet<Tuple3<Integer, String, String>> getLargeTripsParameters(final ExecutionEnvironment env, final String filePath) {
         return readFullDataset(env, filePath).project(0, 1, 2);
     }
