@@ -45,7 +45,6 @@ public class JFKAlarms {
                 .filter(row -> (row.f4 == 2) && (row.f3 >= 2))
                 // Flat map to show trips per day. Output => VendorID, day-of-year, hour, tpep_pickup_datetime, tpep_dropoff_datetime, passenger_count
                 .flatMap((Tuple5<Integer, String, String, Integer, Integer> row, Collector<Tuple6<Integer, String, String, String, String, Integer>> out) -> {
-                    // We assume a trip is from an hour when it is completed, so we take the hour from dropoff
                     final String[] dateSplitted = row.f1.trim().split("[ :-]");
                     if (dateSplitted.length == 6) {
                         final String dayOfYear = dateSplitted[0] + "-" + dateSplitted[1] + "-" + dateSplitted[2];

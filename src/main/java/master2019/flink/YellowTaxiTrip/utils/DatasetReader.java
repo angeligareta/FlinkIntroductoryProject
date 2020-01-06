@@ -1,13 +1,16 @@
 package master2019.flink.YellowTaxiTrip.utils;
 
+import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.java.DataSet;
 import org.apache.flink.api.java.ExecutionEnvironment;
 import org.apache.flink.api.java.tuple.Tuple18;
 import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.api.java.tuple.Tuple5;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.util.Collector;
 
 import java.text.SimpleDateFormat;
-import java.util.Locale;
 
 /**
  * Utils to handle with Yellow Taxi Trip Dataset.
@@ -16,7 +19,19 @@ public class DatasetReader {
     /**
      * Simple date formatter for dataset date types.
      */
-    public static final SimpleDateFormat dateFormatter = new SimpleDateFormat("yyyy-mm-dd HH:mm:ss", Locale.ENGLISH);
+    public static final SimpleDateFormat dateFormatter = new SimpleDateFormat("yyyy-mm-dd HH:mm:ss");
+
+    public static long getTimeInSeconds(final String date) throws Exception {
+        final String[] dateSplitted = date.trim().split("[ :-]");
+        if (dateSplitted.length == 6) {
+            final int hour = Integer.parseInt(dateSplitted[3]);
+            final int minutes = Integer.parseInt(dateSplitted[4]);
+            final int seconds = Integer.parseInt(dateSplitted[5]);
+            return hour * 3600 + minutes * 60 + seconds;
+        } else {
+            throw new Exception("Error in date. Expected format yyyy-mm-dd HH:mm:ss");
+        }
+    }
 
     /**
      * Main method to read the full data from the Yellow Taxi Trip Dataset.
@@ -51,7 +66,13 @@ public class DatasetReader {
      * @param filePath File where the dataset is
      * @return Tuple with shape TODO
      */
-    public static DataSet<Tuple3<Integer, String, String>> getLargeTripsParameters(final ExecutionEnvironment env, final String filePath) {
-        return readFullDataset(env, filePath).project(0, 1, 2);
+    public static DataStream<Tuple3<Integer, String, String>> getLargeTripsParameters(final StreamExecutionEnvironment env, final String filePath) {
+        return env
+                .readTextFile(filePath)
+                .flatMap((String input, Collector<Tuple3<Integer, String, String>> collector) -> {
+                    String[] row = input.split(",");
+                    collector.collect(new Tuple3<>(Integer.parseInt(row[0]), row[1], row[2]));
+                })
+                .returns(Types.TUPLE(Types.INT, Types.STRING, Types.STRING));
     }
 }

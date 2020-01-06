@@ -1,9 +1,16 @@
 package master2019.flink.YellowTaxiTrip;
 
 import master2019.flink.YellowTaxiTrip.utils.DatasetReader;
-import org.apache.flink.api.java.DataSet;
-import org.apache.flink.api.java.ExecutionEnvironment;
+import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.java.tuple.Tuple3;
+import org.apache.flink.api.java.tuple.Tuple4;
+import org.apache.flink.api.java.tuple.Tuple7;
+import org.apache.flink.api.java.utils.ParameterTool;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.timestamps.AscendingTimestampExtractor;
+import org.apache.flink.streaming.api.windowing.time.Time;
+import org.apache.flink.util.Collector;
 
 import java.util.Date;
 
@@ -20,31 +27,95 @@ import java.util.Date;
 
 /**
  * In this class the Large trips program has to be implemented.
+ * <p>
  * Goal: Reports the vendors that do 5 or more trips during 3 hours that take at least 20
  * minutes.
+ * <p>
+ * Expected output: VendorID, day, numberOfTrips, tpep_pickup_datetime, tpep_dropoff_datetime
  */
 public class LargeTrips {
     public static void main(final String[] args) throws Exception {
-        final String filePath = args[0];
+        // Get params from command line
+        final ParameterTool params = ParameterTool.fromArgs(args);
+        final String inputPath = params.get("input");
+        final String outputPath = params.get("output");
 
-        final ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
-        final DataSet<Tuple3<Integer, String, String>> largeTripsDataset = DatasetReader.getLargeTripsParameters(env, filePath);
-        //largeTripsDataset.first(10).print();
+        if (inputPath == null || outputPath == null) {
+            System.err.print("Could not read input and output path from arguments.\n Check you are passing them as arguments with --input and --output");
+            return;
+        }
+
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        final DataStream<Tuple3<Integer, String, String>> largeTripsDataset = DatasetReader.getLargeTripsParameters(env, inputPath);
+
+        final DataStream<Tuple4<Integer, Integer, String, String>> selected_trips_per_vendorID =
+                largeTripsDataset
+                        // First filter trips that take at least 20 minutes
+                        .filter((Tuple3<Integer, String, String> row) -> {
+                            try {
+                                final Date pickupDate = DatasetReader.dateFormatter.parse(row.f1);
+                                final Date dropoffDate = DatasetReader.dateFormatter.parse(row.f2);
+                                final long differenceInMilliseconds = dropoffDate.getTime() - pickupDate.getTime();
+                                final int differenceInMinutes = (int) ((differenceInMilliseconds / 1000) / 60);
+                                return (differenceInMinutes >= 20);
+                            } catch (Exception e) {
+                                // DO THIS happen in your PC? Try puting sysout
+                                //System.out.println("Error");
+                                return false; // This only happen in windows
+                            }
+                        })
+                        // Add new variables, yearAndMonth to group by, day and startedTimeInSeconds that will be our timestamp
+                        // Output => VendorID, yearAndMonth, day, startedTimeInSeconds, number_trips, tpep_pickup_datetime, tpep_dropoff_datetime, passenger_count
+                        .flatMap((Tuple3<Integer, String, String> row, Collector<Tuple7<Integer, String, String, Long, Integer, String, String>> out) -> {
+                            final String[] dateSplitted = row.f1.trim().split("[ :-]");
+                            if (dateSplitted.length == 6) {
+                                final String yearAndMonth = dateSplitted[0] + "-" + dateSplitted[1];
+                                final String day = dateSplitted[2];
+                                final long startedTimeInSeconds = DatasetReader.getTimeInSeconds(row.f1);
+                                out.collect(new Tuple7<>(row.f0, yearAndMonth, day, startedTimeInSeconds, 1, row.f1, row.f2));
+                            }
+                        })
+                        .returns(Types.TUPLE(Types.INT, Types.STRING, Types.STRING, Types.LONG, Types.INT, Types.STRING, Types.STRING))
+                        // Assign started time in seconds as timestamp
+                        .assignTimestampsAndWatermarks(
+                                new AscendingTimestampExtractor<Tuple7<Integer, String, String, Long, Integer, String, String>>() {
+                                    @Override
+                                    public long extractAscendingTimestamp(final Tuple7<Integer, String, String, Long, Integer, String, String> element) {
+                                        return element.f3 * 1000;
+                                    }
+                                }
+                        )
+                        // Group by venorId, year-month and day
+                        .keyBy(0, 1, 2)
+                        // Make time window of 3 hours in seconds
+                        .timeWindow(Time.hours(3))
+                        // Add number of trips per window of three hours and take min of pick time and max of dropoff
+                        .sum(4)
+                        // Filter vendorId with more than 5 trips per window
+                        .filter(row -> row.f4 >= 5)
+                        // Project only asked columns
+                        .project(0, 4, 5, 6);
 
 
-        // Trips that take at least 20 minutes
-        largeTripsDataset.filter((Tuple3<Integer, String, String> row) -> {
-            final Date pickupDate = DatasetReader.dateFormatter.parse(row.f1);
-            final Date dropoffDate = DatasetReader.dateFormatter.parse(row.f2);
-            final Long differenceInMilliseconds = dropoffDate.getTime() - pickupDate.getTime();
-            final Integer differenceInMinutes = (int) ((differenceInMilliseconds / 1000) / 60);
-            return (differenceInMinutes >= 20);
-        }).first(10).print();
+        // Write to output file
+        //selected_trips_per_vendorID.writeAsCsv(outputPath, FileSystem.WriteMode.OVERWRITE);
 
-        try {
-            env.execute();
-        } catch (final Exception e) {
-            e.printStackTrace();
+        // If verbose mode is activated execute is not necessary
+        final Boolean verboseMode = true;
+
+        // Show first 20 results sorted by vendorIDby console
+        if (verboseMode) {
+            try {
+                selected_trips_per_vendorID.print();
+            } catch (final Exception e) {
+                e.printStackTrace();
+            }
+        } else {
+            try {
+                env.execute();
+            } catch (final Exception e) {
+                e.printStackTrace();
+            }
         }
     }
 }
