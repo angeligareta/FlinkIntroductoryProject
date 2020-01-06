@@ -61,7 +61,7 @@ public class LargeTrips {
                                 return (differenceInMinutes >= 20);
                             } catch (Exception e) {
                                 // DO THIS happen in your PC? Try puting sysout
-                                //System.out.println("Error");
+                                e.printStackTrace();
                                 return false; // This only happen in windows
                             }
                         })
