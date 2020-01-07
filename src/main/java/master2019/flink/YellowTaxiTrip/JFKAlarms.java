@@ -22,6 +22,9 @@ import org.apache.flink.util.Collector;
  * JFK can be found in RatecodeID = 2
  */
 public class JFKAlarms {
+	
+	private final static String FILE_NAME = "jfkAlarms.csv";
+	
     public static void main(final String[] args) {
         // Get params from command line
         final ParameterTool params = ParameterTool.fromArgs(args);
@@ -62,7 +65,7 @@ public class JFKAlarms {
 
 
         // Write to output file
-        selected_trips_per_vendorID.writeAsCsv(outputPath, FileSystem.WriteMode.OVERWRITE);
+        selected_trips_per_vendorID.writeAsCsv(outputPath+"/"+FILE_NAME, FileSystem.WriteMode.OVERWRITE);
 
         // If verbose mode is activated execute is not necessary
         final Boolean verboseMode = false;
