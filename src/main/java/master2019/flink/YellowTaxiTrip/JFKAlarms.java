@@ -5,6 +5,7 @@ import org.apache.flink.api.common.operators.Order;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.java.DataSet;
 import org.apache.flink.api.java.ExecutionEnvironment;
+import org.apache.flink.api.java.tuple.Tuple;
 import org.apache.flink.api.java.tuple.Tuple4;
 import org.apache.flink.api.java.tuple.Tuple5;
 import org.apache.flink.api.java.tuple.Tuple6;
@@ -43,7 +44,7 @@ public class JFKAlarms {
         final DataSet<Tuple5<Integer, String, String, Integer, Integer>> jfkAlarmsSubset = DatasetReader.getJFKAlarmsParameters(env, inputPath);
 
         // Get the trips in the expected output: (vendorID, tpep_pickup_datetime, tpep_dropoff_datetime, passenger_count)
-        final DataSet<Tuple4<Integer, String, String, Integer>> selected_trips_per_vendorID = jfkAlarmsSubset
+        final DataSet<Tuple> selected_trips_per_vendorID = jfkAlarmsSubset
                 // First filter trips where destination is JFK and trips where there are two or more passengers
                 .filter(row -> (row.f4 == 2) && (row.f3 >= 2))
                 // Flat map to show trips per day. Output => VendorID, day-of-year, hour, tpep_pickup_datetime, tpep_dropoff_datetime, passenger_count
@@ -61,7 +62,7 @@ public class JFKAlarms {
                 // sum passengerCount, getMin of pickup date and getMax of dropOff date
                 .sum(5).andMin(3).andMax(4)
                 // Only select vendorID, tpep_pickup_datetime, tpep_dropoff_datetime, passenger_count for output
-                .project(0, 3, 4, 5);
+                .project(0, 3, 4, 5).sortPartition(1, Order.ASCENDING);
 
 
         // Write to output file

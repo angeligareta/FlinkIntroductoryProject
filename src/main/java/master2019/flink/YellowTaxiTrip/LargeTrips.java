@@ -12,8 +12,12 @@ import org.apache.flink.core.fs.FileSystem;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.AssignerWithPeriodicWatermarks;
+import org.apache.flink.streaming.api.functions.AssignerWithPunctuatedWatermarks;
 import org.apache.flink.streaming.api.functions.timestamps.AscendingTimestampExtractor;
+import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor;
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
+import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
@@ -58,7 +62,7 @@ public class LargeTrips {
         }
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
+        //env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
         
         // ID, initDate, endDate
         DataStream<Tuple3<Integer, String, String>> largeTripsDataset = DatasetReader.getLargeTripsParameters(env, inputPath);
@@ -73,14 +77,23 @@ public class LargeTrips {
         	return endTime.getTime() - initTime.getTime() >= 20*60*1000;
         		
         })
-		.assignTimestampsAndWatermarks(
+		/*.assignTimestampsAndWatermarks(
 				new AscendingTimestampExtractor<Tuple3<Integer, String, String>>() {
 					@Override
 					public long extractAscendingTimestamp(final Tuple3<Integer, String, String> row) {
 						return dateStringToDate(row.f1).getTime();
 					}
 				}
-				)
+				)*/
+		
+          .assignTimestampsAndWatermarks(
+                        new AscendingTimestampExtractor<Tuple3<Integer, String, String>>() {
+                            @Override
+                            public long extractAscendingTimestamp(final Tuple3<Integer, String, String> row) {
+                                return dateStringToDate(row.f1).getTime();
+                            }
+                        }
+                )
 		.keyBy(0)
 		.window(TumblingEventTimeWindows.of(Time.hours(3))) // Time window of 3 hours
 		.apply(new WindowFunction<Tuple3<Integer, String, String>, Tuple5<Integer, Integer, String, String, String>, Tuple, TimeWindow>() {
@@ -95,6 +108,7 @@ public class LargeTrips {
 				Integer count = 0;
 				String initDate = first.f1;
 				String endDate = first.f2;
+				
 				if(first != null){
 					id=first.f0;
 					count = 1;
@@ -104,6 +118,17 @@ public class LargeTrips {
 					Tuple3<Integer, String, String> next = iterator.next();
 					count++;
 					endDate = first.f2;
+					/*
+					if(dateStringToDate(next.f1).getTime()<dateStringToDate(initDate).getTime()) {
+						initDate = next.f1;
+					}
+					
+					*/
+					if(dateStringToDate(next.f2).getTime()>dateStringToDate(endDate).getTime()) {
+						endDate = next.f2;
+					}
+					
+					
 				}
 				String day = initDate.split(" ")[0]; 
 				
@@ -182,6 +207,7 @@ public class LargeTrips {
     
 	public static Date dateStringToDate(String dateString) {
 		String[] initTimeArray = parseDateString(dateString);
+		Integer second = Integer.parseInt(initTimeArray[5]);
 		Integer minute = Integer.parseInt(initTimeArray[4]);
 		Integer hour = Integer.parseInt(initTimeArray[3]);
 		Integer day = Integer.parseInt(initTimeArray[2]);
@@ -189,7 +215,8 @@ public class LargeTrips {
 		Integer year = Integer.parseInt(initTimeArray[0]);
 
 		Calendar target = Calendar.getInstance();
-		target.set(year, month, day, hour, minute);
+		target.set(year, month-1, day, hour, minute);
+		target.set(Calendar.SECOND, second);
 
 		return target.getTime();
 
@@ -200,7 +227,9 @@ public class LargeTrips {
 		String[] date = dateString.split(" ")[0].split("-");
 		String[] time = dateString.split(" ")[1].split(":");
 
-		return new String[] { date[0], date[1], date[2], time[0], time[1] };
+		return new String[] { date[0], date[1], date[2], time[0], time[1], time[2] };
 
 	}
+	
+
 }
