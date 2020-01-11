@@ -10,27 +10,46 @@ import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.util.Collector;
 
-import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Date;
 
 /**
  * Utils to handle with Yellow Taxi Trip Dataset.
  */
 public class DatasetReader {
     /**
-     * Simple date formatter for dataset date types.
+     * Parse date to milliseconds using the Calendar to avoid parser errors.
+     *
+     * @param dateString Date to be parseed
+     * @return Time in Milliseconds
      */
-    public static final SimpleDateFormat dateFormatter = new SimpleDateFormat("yyyy-mm-dd HH:mm:ss");
+    public static Date dateStringToDate(final String dateString) {
+        final String[] initTimeArray = parseDateString(dateString);
+        final int year = Integer.parseInt(initTimeArray[0]);
+        final int month = Integer.parseInt(initTimeArray[1]);
+        final int day = Integer.parseInt(initTimeArray[2]);
+        final int hour = Integer.parseInt(initTimeArray[3]);
+        final int minute = Integer.parseInt(initTimeArray[4]);
+        final int second = Integer.parseInt(initTimeArray[5]);
 
-    public static long getTimeInSeconds(final String date) throws Exception {
-        final String[] dateSplitted = date.trim().split("[ :-]");
-        if (dateSplitted.length == 6) {
-            final int hour = Integer.parseInt(dateSplitted[3]);
-            final int minutes = Integer.parseInt(dateSplitted[4]);
-            final int seconds = Integer.parseInt(dateSplitted[5]);
-            return hour * 3600 + minutes * 60 + seconds;
-        } else {
-            throw new Exception("Error in date. Expected format yyyy-mm-dd HH:mm:ss");
-        }
+        final Calendar target = Calendar.getInstance();
+        target.set(year, month - 1, day, hour, minute);
+        target.set(Calendar.SECOND, second);
+
+        return target.getTime();
+    }
+
+    /**
+     * Separate date by fields that compose it: year, month, day, hour, minute and second
+     *
+     * @param dateString Date to be parsed
+     * @return Date separated by fields: year, month, day, hour, minute and second
+     */
+    public static String[] parseDateString(final String dateString) {
+        final String[] date = dateString.split(" ")[0].split("-");
+        final String[] time = dateString.split(" ")[1].split(":");
+
+        return new String[]{date[0], date[1], date[2], time[0], time[1], time[2]};
     }
 
     /**
@@ -75,4 +94,6 @@ public class DatasetReader {
                 })
                 .returns(Types.TUPLE(Types.INT, Types.STRING, Types.STRING));
     }
+
+
 }

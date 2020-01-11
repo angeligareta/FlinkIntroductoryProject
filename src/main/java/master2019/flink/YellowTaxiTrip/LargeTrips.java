@@ -1,31 +1,22 @@
 package master2019.flink.YellowTaxiTrip;
 
 import master2019.flink.YellowTaxiTrip.utils.DatasetReader;
-import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.java.tuple.Tuple;
 import org.apache.flink.api.java.tuple.Tuple3;
-import org.apache.flink.api.java.tuple.Tuple4;
 import org.apache.flink.api.java.tuple.Tuple5;
-import org.apache.flink.api.java.tuple.Tuple6;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.core.fs.FileSystem;
-import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.api.functions.AssignerWithPeriodicWatermarks;
-import org.apache.flink.streaming.api.functions.AssignerWithPunctuatedWatermarks;
 import org.apache.flink.streaming.api.functions.timestamps.AscendingTimestampExtractor;
-import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor;
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
-import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
-import org.apache.flink.util.Collector;
 
-import java.util.Calendar;
 import java.util.Date;
 import java.util.Iterator;
+import java.util.NoSuchElementException;
 
 // Dataset variables
 // VendorID, tpep_pickup_datetime, tpep_dropoff_datetime, passenger_count, trip_distance, RatecodeID,
@@ -47,10 +38,10 @@ import java.util.Iterator;
  * Expected output: VendorID, day, numberOfTrips, tpep_pickup_datetime, tpep_dropoff_datetime
  */
 public class LargeTrips {
-	
-	private final static String FILE_NAME = "largeTrips.csv";
-	
-    public static void main(final String[] args) throws Exception {
+
+    private final static String FILE_NAME = "largeTrips.csv";
+
+    public static void main(final String[] args) throws NoSuchElementException {
         // Get params from command line
         final ParameterTool params = ParameterTool.fromArgs(args);
         final String inputPath = params.get("input");
@@ -62,84 +53,81 @@ public class LargeTrips {
         }
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        //env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
-        
+
         // ID, initDate, endDate
-        DataStream<Tuple3<Integer, String, String>> largeTripsDataset = DatasetReader.getLargeTripsParameters(env, inputPath);
-        
-        // Trips > 20 minutes
-        DataStream<Tuple5<Integer, String, Integer, String, String>> selected_trips_per_vendorID = largeTripsDataset.filter(row -> {
-        	
-        	// Using calendar class avoids Data parser errors
-        	Date initTime = dateStringToDate(row.f1);
-			Date endTime = dateStringToDate(row.f2);
-			
-        	return endTime.getTime() - initTime.getTime() >= 20*60*1000;
-        		
-        })
-		/*.assignTimestampsAndWatermarks(
-				new AscendingTimestampExtractor<Tuple3<Integer, String, String>>() {
-					@Override
-					public long extractAscendingTimestamp(final Tuple3<Integer, String, String> row) {
-						return dateStringToDate(row.f1).getTime();
-					}
-				}
-				)*/
-		
-          .assignTimestampsAndWatermarks(
+        final DataStream<Tuple3<Integer, String, String>> largeTripsDataset = DatasetReader.getLargeTripsParameters(env, inputPath);
+
+        // First filter by Trips > 20 minutes
+        final DataStream<Tuple5<Integer, String, Integer, String, String>> selected_trips_per_vendorID = largeTripsDataset
+                .filter(row -> {
+                    // Using calendar class avoids Data parser errors
+                    Date initTime = DatasetReader.dateStringToDate(row.f1);
+                    Date endTime = DatasetReader.dateStringToDate(row.f2);
+
+                    return endTime.getTime() - initTime.getTime() >= 20 * 60 * 1000;
+
+                })
+                // Assign trip start time as timestamp
+                .assignTimestampsAndWatermarks(
                         new AscendingTimestampExtractor<Tuple3<Integer, String, String>>() {
                             @Override
                             public long extractAscendingTimestamp(final Tuple3<Integer, String, String> row) {
-                                return dateStringToDate(row.f1).getTime();
+                                return DatasetReader.dateStringToDate(row.f1).getTime();
                             }
                         }
                 )
-		.keyBy(0)
-		.window(TumblingEventTimeWindows.of(Time.hours(3))) // Time window of 3 hours
-		.apply(new WindowFunction<Tuple3<Integer, String, String>, Tuple5<Integer, Integer, String, String, String>, Tuple, TimeWindow>() {
+                .keyBy(0)
+                .window(TumblingEventTimeWindows.of(Time.hours(3))) // Time window of 3 hours
+                .apply((WindowFunction<Tuple3<Integer, String, String>, Tuple5<Integer, Integer, String, String, String>, Tuple, TimeWindow>) (key, window, input, out) -> {
+                    final Iterator<Tuple3<Integer, String, String>> iterator = input.iterator();
+                    String initDate = "", endDate = "";
+                    Integer id = 0, count = 0;
 
-			@Override
-			public void apply(Tuple key, TimeWindow window, Iterable<Tuple3<Integer, String, String>> input,
-					Collector<Tuple5<Integer, Integer, String, String, String>> out) throws Exception {
-				
-				Iterator<Tuple3<Integer, String, String>> iterator = input.iterator();
-				Tuple3<Integer, String, String> first = iterator.next();
-				Integer id = 0;
-				Integer count = 0;
-				String initDate = first.f1;
-				String endDate = first.f2;
-				
-				if(first != null){
-					id=first.f0;
-					count = 1;
-					
-				}
-				while(iterator.hasNext()){
-					Tuple3<Integer, String, String> next = iterator.next();
-					count++;
-					endDate = next.f2;
-					/*
-					if(dateStringToDate(next.f1).getTime()<dateStringToDate(initDate).getTime()) {
-						initDate = next.f1;
-					}
-					
-					*/
-					/*if(dateStringToDate(next.f2).getTime()>dateStringToDate(endDate).getTime()) {
-						endDate = next.f2;
-					}*/
-					
-					
-				}
-				String day = initDate.split(" ")[0]; 
-				
-				out.collect(new Tuple5<Integer, Integer, String, String, String>(id, count, day, initDate, endDate));				
-			}
-		})
-		.filter(row -> row.f1 > 4).project(0, 2, 1, 3, 4); // 5 trips or more
-        
-        
+                    // Boolean for detecting if the element is the first item to save id and initDate
+                    boolean firstItem = true;
+                    while (iterator.hasNext()) {
+                        final Tuple3<Integer, String, String> next = iterator.next();
 
-/*
+                        if (firstItem) {
+                            initDate = next.f1;
+                            id = next.f0;
+                            firstItem = false;
+                        }
+                        count++;
+                        endDate = next.f2;
+                    }
+
+                    final String day = initDate.split(" ")[0];
+                    out.collect(new Tuple5<>(id, count, day, initDate, endDate));
+                })
+                // Filter vendorId with 5 trips or more
+                .filter(row -> row.f1 > 4)
+                // Project expected output columns
+                .project(0, 2, 1, 3, 4);
+
+        // Write to output file
+        selected_trips_per_vendorID.writeAsCsv(outputPath + "/" + FILE_NAME, FileSystem.WriteMode.OVERWRITE);
+
+        // If verbose mode is activated execute is not necessary
+        final boolean verboseMode = true;
+        // Show first 20 results sorted by vendorIDby console
+        if (verboseMode) {
+            try {
+                env.execute();
+                selected_trips_per_vendorID.print();
+            } catch (final Exception e) {
+                e.printStackTrace();
+            }
+        } else {
+            try {
+                env.execute();
+            } catch (final Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+	/*
         final DataStream<Tuple4<Integer, Integer, String, String>> selected_trips_per_vendorID =
                 largeTripsDataset
 
@@ -180,56 +168,4 @@ public class LargeTrips {
                         // Project only asked columns
                         .project(0, 3, 4, 5);
 */
-
-        // Write to output file
-        selected_trips_per_vendorID.writeAsCsv(outputPath+"/"+FILE_NAME, FileSystem.WriteMode.OVERWRITE);
-
-        // If verbose mode is activated execute is not necessary
-        final Boolean verboseMode = true;
-
-        // Show first 20 results sorted by vendorIDby console
-        if (verboseMode) {
-            try {
-                env.execute();
-                selected_trips_per_vendorID.print();
-            } catch (final Exception e) {
-                e.printStackTrace();
-            }
-        } else {
-            try {
-                env.execute();
-            } catch (final Exception e) {
-                e.printStackTrace();
-            }
-        }
-    }
-    
-    
-	public static Date dateStringToDate(String dateString) {
-		String[] initTimeArray = parseDateString(dateString);
-		Integer second = Integer.parseInt(initTimeArray[5]);
-		Integer minute = Integer.parseInt(initTimeArray[4]);
-		Integer hour = Integer.parseInt(initTimeArray[3]);
-		Integer day = Integer.parseInt(initTimeArray[2]);
-		Integer month = Integer.parseInt(initTimeArray[1]);
-		Integer year = Integer.parseInt(initTimeArray[0]);
-
-		Calendar target = Calendar.getInstance();
-		target.set(year, month-1, day, hour, minute);
-		target.set(Calendar.SECOND, second);
-
-		return target.getTime();
-
-	}
-
-	public static String[] parseDateString(String dateString) {
-
-		String[] date = dateString.split(" ")[0].split("-");
-		String[] time = dateString.split(" ")[1].split(":");
-
-		return new String[] { date[0], date[1], date[2], time[0], time[1], time[2] };
-
-	}
-	
-
 }
