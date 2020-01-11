@@ -104,7 +104,9 @@ public class LargeTrips {
                 .filter(row -> row.f2 >= 5);
 
         // Write to output file
-        selected_trips_per_vendorID.writeAsCsv(outputPath + "/" + FILE_NAME, FileSystem.WriteMode.OVERWRITE);
+        selected_trips_per_vendorID
+                .writeAsCsv(outputPath + "/" + FILE_NAME, FileSystem.WriteMode.OVERWRITE)
+                .setParallelism(1);
 
         // If verbose mode is activated execute is not necessary
         final boolean verboseMode = true;

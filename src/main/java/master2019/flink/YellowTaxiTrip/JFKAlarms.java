@@ -96,7 +96,9 @@ public class JFKAlarms {
                 });
 
         // Write to output file
-        selected_trips_per_vendorID.writeAsCsv(outputPath + "/" + FILE_NAME, FileSystem.WriteMode.OVERWRITE);
+        selected_trips_per_vendorID
+                .writeAsCsv(outputPath + "/" + FILE_NAME, FileSystem.WriteMode.OVERWRITE)
+                .setParallelism(1);
 
         // If verbose mode is activated execute is not necessary
         final Boolean verboseMode = false;
