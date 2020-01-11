@@ -290,6 +290,5 @@ $RECYCLE.BIN/
 
 target
 dataset
-output
 
 # End of https://www.gitignore.io/api/java,linux,macos,windows,intellij,intellij+all,intellij+iml

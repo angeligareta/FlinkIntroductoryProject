@@ -15,20 +15,8 @@ import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.util.Collector;
 
-import java.util.Date;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
-
-// Dataset variables
-// VendorID, tpep_pickup_datetime, tpep_dropoff_datetime, passenger_count, trip_distance, RatecodeID,
-//store_and_fwd_flag, PULocationID, DOLocationID, payment_type, fare_amount, extra, mta_tax,
-//tip_amount, tolls_amount, improvement_surcharge, total_amount, congestion_surcharge
-
-// Required for this exercise
-// VendorID, tpep_pickup_datetime, tpep_dropoff_datetime
-
-// Required for output
-// VendorID, day, numberOfTrips, tpep_pickup_datetime, tpep_dropoff_datetime
 
 /**
  * In this class the Large trips program has to be implemented.
@@ -41,6 +29,7 @@ import java.util.NoSuchElementException;
 public class LargeTrips {
 
     private final static String FILE_NAME = "largeTrips.csv";
+    private final static int MIN_TRIP_TIME = 20 * 60 * 1000; // 20 minutes
 
     public static void main(final String[] args) throws NoSuchElementException {
         // Get params from command line
@@ -58,15 +47,12 @@ public class LargeTrips {
         // ID, initDate, endDate
         final DataStream<Tuple3<Integer, String, String>> largeTripsDataset = DatasetReader.getLargeTripsParameters(env, inputPath);
 
-        // First filter by Trips > 20 minutes
         final DataStream<Tuple5<Integer, String, Integer, String, String>> selected_trips_per_vendorID = largeTripsDataset
+                // First filter by Trips > 20 minutes
                 .filter(row -> {
-                    // Using calendar class avoids Data parser errors
-                    Date initTime = DatasetReader.dateStringToDate(row.f1);
-                    Date endTime = DatasetReader.dateStringToDate(row.f2);
-
-                    return (endTime.getTime() - initTime.getTime()) >= 20 * 60 * 1000;
-
+                    long initTime = DatasetReader.dateStringToDate(row.f1).getTime();
+                    long endTime = DatasetReader.dateStringToDate(row.f2).getTime();
+                    return (endTime - initTime) >= MIN_TRIP_TIME;
                 })
                 // Assign trip start time as timestamp
                 .assignTimestampsAndWatermarks(
@@ -77,38 +63,45 @@ public class LargeTrips {
                             }
                         }
                 )
+                // Key By vendor Id
                 .keyBy(0)
-                .window(TumblingEventTimeWindows.of(Time.hours(3))) // Time window of 3 hours
-                .apply(new WindowFunction<Tuple3<Integer, String, String>, Tuple5<Integer, Integer, String, String, String>, Tuple, TimeWindow>() {
+                // Time window of 3 hours
+                .window(TumblingEventTimeWindows.of(Time.hours(3)))
+                // Sum number of trips in the window of three hours, get first pickup date and last dropoff date and save the day
+                .apply(new WindowFunction<Tuple3<Integer, String, String>, Tuple5<Integer, String, Integer, String, String>, Tuple, TimeWindow>() {
                     @Override
                     public void apply(final Tuple key, final TimeWindow window, final Iterable<Tuple3<Integer, String, String>> input,
-                                      final Collector<Tuple5<Integer, Integer, String, String, String>> out) {
+                                      final Collector<Tuple5<Integer, String, Integer, String, String>> out) {
                         final Iterator<Tuple3<Integer, String, String>> iterator = input.iterator();
-                        String initDate = "", endDate = "";
-                        Integer id = 0, count = 0;
+                        String firstPickupDate = "", lastDropoffDate = "";
+                        Integer vendorID = 0, numberOfTrips = 0;
 
                         // Boolean for detecting if the element is the first item to save id and initDate
                         boolean firstItem = true;
                         while (iterator.hasNext()) {
                             final Tuple3<Integer, String, String> next = iterator.next();
 
+                            // If first element save vendorId and pickupdate
                             if (firstItem) {
-                                initDate = next.f1;
-                                id = next.f0;
+                                vendorID = next.f0;
+                                firstPickupDate = next.f1;
                                 firstItem = false;
                             }
-                            count++;
-                            endDate = next.f2;
+
+                            // If last element save dropoff date
+                            if (!iterator.hasNext()) {
+                                lastDropoffDate = next.f2;
+                            }
+
+                            numberOfTrips++;
                         }
 
-                        final String day = initDate.split(" ")[0];
-                        out.collect(new Tuple5<Integer, Integer, String, String, String>(id, count, day, initDate, endDate));
+                        final String day = firstPickupDate.split(" ")[0];
+                        out.collect(new Tuple5<Integer, String, Integer, String, String>(vendorID, day, numberOfTrips, firstPickupDate, lastDropoffDate));
                     }
                 })
                 // Filter vendorId with 5 trips or more
-                .filter(row -> row.f1 > 4)
-                // Project expected output columns
-                .project(0, 2, 1, 3, 4);
+                .filter(row -> row.f2 >= 5);
 
         // Write to output file
         selected_trips_per_vendorID.writeAsCsv(outputPath + "/" + FILE_NAME, FileSystem.WriteMode.OVERWRITE);
@@ -131,46 +124,4 @@ public class LargeTrips {
             }
         }
     }
-
-	/*
-        final DataStream<Tuple4<Integer, Integer, String, String>> selected_trips_per_vendorID =
-                largeTripsDataset
-
-                        // Add new variables, yearAndMonth and day to group by
-                        // Output => VendorID, yearAndMonth, day, number_trips, tpep_pickup_datetime, tpep_dropoff_datetime, passenger_count
-                        .flatMap((Tuple3<Integer, String, String> row, Collector<Tuple6<Integer, String, String, Integer, String, String>> out) -> {
-                            final String[] dateSplitted = row.f1.trim().split("[ :-]");
-                            if (dateSplitted.length == 6) {
-                                final String yearAndMonth = dateSplitted[0] + "-" + dateSplitted[1];
-                                final String day = dateSplitted[2];
-                                out.collect(new Tuple6<>(row.f0, yearAndMonth, day, 1, row.f1, row.f2));
-                            }
-                        })
-                        .returns(Types.TUPLE(Types.INT, Types.STRING, Types.STRING, Types.INT, Types.STRING, Types.STRING))
-                        // Assign started time in seconds as timestamp
-                        .assignTimestampsAndWatermarks(
-                                new AscendingTimestampExtractor<Tuple6<Integer, String, String, Integer, String, String>>() {
-                                    @Override
-                                    public long extractAscendingTimestamp(final Tuple6<Integer, String, String, Integer, String, String> row) {
-                                        try {
-                                            final long startedTimeInSeconds = DatasetReader.getTimeInSeconds(row.f4);
-                                            return startedTimeInSeconds * 1000;
-                                        } catch (final Exception e) {
-                                            e.printStackTrace();
-                                            return 0;
-                                        }
-                                    }
-                                }
-                        )
-                        // Group by vendorId, year-month and day
-                        .keyBy(0, 1, 2)
-                        // Make time window of 3 hours in seconds
-                        .timeWindow(Time.hours(3))
-                        // Add number of trips per window of three hours and take min of pick time and max of dropoff
-                        .sum(3)
-                        // Filter vendorId with more than 5 trips per window
-                        .filter(row -> row.f3 >= 5)
-                        // Project only asked columns
-                        .project(0, 3, 4, 5);
-*/
 }
