@@ -117,16 +117,16 @@ public class LargeTrips {
 				while(iterator.hasNext()){
 					Tuple3<Integer, String, String> next = iterator.next();
 					count++;
-					endDate = first.f2;
+					endDate = next.f2;
 					/*
 					if(dateStringToDate(next.f1).getTime()<dateStringToDate(initDate).getTime()) {
 						initDate = next.f1;
 					}
 					
 					*/
-					if(dateStringToDate(next.f2).getTime()>dateStringToDate(endDate).getTime()) {
+					/*if(dateStringToDate(next.f2).getTime()>dateStringToDate(endDate).getTime()) {
 						endDate = next.f2;
-					}
+					}*/
 					
 					
 				}
