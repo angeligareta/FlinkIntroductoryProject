@@ -13,6 +13,7 @@ import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
+import org.apache.flink.util.Collector;
 
 import java.util.Date;
 import java.util.Iterator;
@@ -64,7 +65,7 @@ public class LargeTrips {
                     Date initTime = DatasetReader.dateStringToDate(row.f1);
                     Date endTime = DatasetReader.dateStringToDate(row.f2);
 
-                    return endTime.getTime() - initTime.getTime() >= 20 * 60 * 1000;
+                    return (endTime.getTime() - initTime.getTime()) >= 20 * 60 * 1000;
 
                 })
                 // Assign trip start time as timestamp
@@ -78,27 +79,31 @@ public class LargeTrips {
                 )
                 .keyBy(0)
                 .window(TumblingEventTimeWindows.of(Time.hours(3))) // Time window of 3 hours
-                .apply((WindowFunction<Tuple3<Integer, String, String>, Tuple5<Integer, Integer, String, String, String>, Tuple, TimeWindow>) (key, window, input, out) -> {
-                    final Iterator<Tuple3<Integer, String, String>> iterator = input.iterator();
-                    String initDate = "", endDate = "";
-                    Integer id = 0, count = 0;
+                .apply(new WindowFunction<Tuple3<Integer, String, String>, Tuple5<Integer, Integer, String, String, String>, Tuple, TimeWindow>() {
+                    @Override
+                    public void apply(final Tuple key, final TimeWindow window, final Iterable<Tuple3<Integer, String, String>> input,
+                                      final Collector<Tuple5<Integer, Integer, String, String, String>> out) {
+                        final Iterator<Tuple3<Integer, String, String>> iterator = input.iterator();
+                        String initDate = "", endDate = "";
+                        Integer id = 0, count = 0;
 
-                    // Boolean for detecting if the element is the first item to save id and initDate
-                    boolean firstItem = true;
-                    while (iterator.hasNext()) {
-                        final Tuple3<Integer, String, String> next = iterator.next();
+                        // Boolean for detecting if the element is the first item to save id and initDate
+                        boolean firstItem = true;
+                        while (iterator.hasNext()) {
+                            final Tuple3<Integer, String, String> next = iterator.next();
 
-                        if (firstItem) {
-                            initDate = next.f1;
-                            id = next.f0;
-                            firstItem = false;
+                            if (firstItem) {
+                                initDate = next.f1;
+                                id = next.f0;
+                                firstItem = false;
+                            }
+                            count++;
+                            endDate = next.f2;
                         }
-                        count++;
-                        endDate = next.f2;
-                    }
 
-                    final String day = initDate.split(" ")[0];
-                    out.collect(new Tuple5<>(id, count, day, initDate, endDate));
+                        final String day = initDate.split(" ")[0];
+                        out.collect(new Tuple5<Integer, Integer, String, String, String>(id, count, day, initDate, endDate));
+                    }
                 })
                 // Filter vendorId with 5 trips or more
                 .filter(row -> row.f1 > 4)
