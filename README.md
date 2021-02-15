@@ -8,7 +8,12 @@
 </p>
 
 ## Aim
-This project aims to predict the delays on the [Yellow taxi dataset](https://developer.ibm.com/technologies/artificial-intelligence/data/jfk-weather-data), by implementing an application based on [Apache Flink](https://flink.apache.org/). It is fully developed using Java 8 and using lambda for the Flink pipeline.
+This project aims to predict the delays on the [Yellow taxi dataset](https://developer.ibm.com/technologies/artificial-intelligence/data/jfk-weather-data), by implementing an application based on [Apache Flink](https://flink.apache.org/). The goal is to inform about the trips ending at JFK airport with two or more passengers each hour for each vendorID.
+
+The [output](output) format is: vendorID, tpep_pickup_datetime, tpep_dropoff_datetime, passenger_count.
+
+## Tools
+It is fully developed using Java 8 and using lambda for the Apache Flink pipeline.
 
 ## Authors
 - Angel Luis González
